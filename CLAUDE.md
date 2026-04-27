@@ -19,13 +19,13 @@ pnpm test:size                # Bundle size check (size-limit, 150 kB limit)
 
 ## Architecture
 
-**Monorepo** managed by pnpm workspaces + Turborepo. Three workspace packages:
+**Monorepo** managed by pnpm workspaces + Turborepo. Two workspace packages plus one example app:
 
 | Package | Path | Description |
 |---------|------|-------------|
 | `@anaralabs/lector` | `packages/lector` | Core library - headless PDF viewer React components |
 | `docs` | `packages/docs` | Documentation site (Next.js 15 + fumadocs) |
-| `basic` | `examples/basic` | Example app (Vite + React) |
+| `basic` | `examples/basic` | Example app (Vite + React), not a pnpm workspace package |
 
 ### Core Library (`packages/lector`)
 
