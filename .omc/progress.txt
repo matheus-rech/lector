@@ -111,6 +111,48 @@ Codex/gpt-5.5 status:
   reviewer in the loop. Will run a codex/gpt-5.5 critic pass over the final
   diff if Aperture comes back before US-007.
 
+═══════════════════════════════════════════════════════════════════════════════
+US-002: MiniMap sub-components                       ✅ COMPLETE  2026-04-27
+═══════════════════════════════════════════════════════════════════════════════
+
+Files created:
+  packages/lector/src/components/minimap/minimap-page.tsx       46 lines
+  packages/lector/src/components/minimap/minimap-page.test.tsx  60 lines (6 tests)
+  packages/lector/src/components/minimap/minimap-viewport.tsx   50 lines
+  packages/lector/src/components/minimap/minimap-viewport.test.tsx 65 lines (7 tests)
+  packages/lector/src/components/minimap/minimap-highlight.tsx  ~115 lines
+  packages/lector/src/components/minimap/minimap-highlight.test.tsx 240 lines (9 tests)
+
+TDD discipline:
+  • All 22 tests written FIRST (RED), verified failing with module-not-found
+  • Implementations written GREEN, all 22 tests pass + 22 from US-001 = 44 total
+  • Cleanup pattern (afterEach(cleanup)) added — required for vitest browser
+    mode (render() doesn't auto-clean between tests in the same file)
+
+Verification:
+  pnpm lint        ✅ Checked 69 files, no fixes, no warnings
+  pnpm test:unit   ✅ 44/44 passed in 1.16s
+
+API surface:
+  MiniMapPage(pageNumber, width, height, children?)
+    — `position: relative` so children can absolute-anchor
+    — data-page-number, data-testid for debug + tests
+    — forwardRef + className/style passthrough
+
+  MiniMapViewport(top, height, children?)
+    — `position: absolute`, full-width, `pointerEvents: auto` for US-004 drag
+    — data-minimap-viewport for debug
+    — forwardRef + className/style passthrough; consumer can override pointerEvents
+
+  MiniMapHighlight(highlight, pageWidth, pageHeight, sourcePageHeight?, onClick?)
+    — Renders one absolutely-positioned pill per rect in highlight.rectangles
+    — Handles type="percent" (rect.top/100 * pageHeight) and type="pixels"
+      (rect.top/sourcePageHeight * pageHeight)
+    — Min-height clamp at 2px so tiny highlights remain visible
+    — onClick passthrough for US-003 wiring; pill becomes role="button" tabIndex=0
+      when onClick is provided
+    — data-highlight-uuid + data-rect-index for debug + tests
+
 ───────────────────────────────────────────────────────────────────────────────
-Next: US-002 — MiniMapPage / MiniMapHighlight / MiniMapViewport sub-components
+Next: US-003 — MiniMap orchestrator + click-to-jump
 ───────────────────────────────────────────────────────────────────────────────

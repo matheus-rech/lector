@@ -31,7 +31,8 @@
       "id": "US-002",
       "title": "MiniMapPage / MiniMapHighlight / MiniMapViewport default sub-components",
       "priority": 2,
-      "passes": false,
+      "passes": true,
+      "completed_at": "2026-04-27T10:01:45Z",
       "files": [
         "packages/lector/src/components/minimap/minimap-page.tsx",
         "packages/lector/src/components/minimap/minimap-highlight.tsx",

@@ -60,10 +60,11 @@ bun.lockb
 .cursorrules
 
 # OMC (oh-my-claudecode) — track plans and PRDs, ignore ephemeral session state
-.omc/state/
-.omc/sessions/
-.omc/project-memory.json
-.omc/.DS_Store
+# Use ** so nested .omc/ dirs (e.g. packages/lector/.omc/) are also ignored.
+**/.omc/state/
+**/.omc/sessions/
+**/.omc/project-memory.json
+**/.omc/.DS_Store
 
 # Claude Code local state
 .claude/
