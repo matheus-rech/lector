@@ -1,0 +1,158 @@
+MiniMap implementation progress
+
+═══════════════════════════════════════════════════════════════════════════════
+US-001: useMiniMap hook    v1 → v2 (codex-fix) → v3 (codex-rereview-fix) → ✅
+═══════════════════════════════════════════════════════════════════════════════
+
+v3 (post-second codex/gpt-5.5 review) addressed 3 finer findings:
+  Round-2 finding 2-NEW (asymmetric gap): forward(r.bodyEnd) returned m_{i+1}.top
+    in <Pages gap=0> + <MiniMap gap=6> config, breaking round-trip identity at
+    the body-end boundary. Fix: explicit boundary clamp `if (offset === r.bodyEnd
+    && r.realGap === 0) return m.bodyEnd` before falling through to next page.
+  Round-2 finding 5 (NaN sentinel): rAF skip-frame guard would degrade to
+    per-frame setState if virtualizer.scrollOffset was ever NaN
+    (NaN !== NaN forever). Fix: Number.isFinite() normalization in tick()
+    for both scrollOffset and clientHeight.
+  Round-2 finding 6 (skip-frame test): asserted viewport.top stayed at 0,
+    which React's primitive bail-out would mask. Strengthened with a Probe
+    component + render counter — assertion is now "≤1 additional render
+    across 5 stable-offset frames", which a buggy implementation cannot pass.
+
+TDD discipline maintained:
+  • Each finding's test added FIRST, watched fail with the right error
+  • Implementation fix applied minimally, tests transitioned RED→GREEN
+  • Existing tests stayed green throughout (no regressions introduced)
+
+Final test count: 22 passing (14 v1 + 4 v2 + 4 v3).
+  • lint clean (no warnings)
+  • pnpm build success
+  • bundle size unchanged: 39,126 / 150,000 bytes
+
+v1 → v2 codex/gpt-5.5 review found 4 real bugs (architect+critic missed them):
+  1. forwardMap/inverseMap ignored the virtualizer's gap (default 10px in
+     <Pages>). scrollOffset in a real gap mapped to NEGATIVE fraction in the
+     next page → backward jump in the minimap
+  2. Minimap gap regions broke the "true inverse" PRD criterion — the 10
+     fixed sample points happened to skip the gap intervals
+  3. Zero-width pages skipped `cursor += gap`, deviating from plan formula
+     `top_i = sum(...) + i*gap`
+  4. realStartOf silently returned 0 when getOffsetForIndex returned null —
+     fabricating page starts during init
+
+Fix applied via strict TDD (RED → verify-fail → GREEN → verify-pass):
+  • Added 4 failing tests, one per bug, each explicitly verified to fail
+    for the right reason before any production code was written
+  • Refactored useMiniMap.tsx with slot-aware mapping: each page has body
+    + trailing-gap sub-slots; body↔body and gap↔gap mappings are linear
+    within their sub-slot. forward∘inverse is now identity everywhere
+  • realStartOf now returns null on unresolved offsets; realPageInfo
+    propagates null up; mappings return safe 0 instead of fabricating
+  • Cursor advances by (pageHeight + gap) for every page including
+    zero-width — matches the plan formula
+
+Post-fix verification:
+  pnpm lint           ✅ Checked 63 files; no fixes
+  pnpm build          ✅ ESM 181.25 KB raw / 39,126 bytes gzipped (size-limit)
+  pnpm test:unit      ✅ 18/18 passed (14 v1 tests + 4 codex-finding tests)
+  Bundle size delta   net-neutral (hook still not exported)
+
+Files created:
+  packages/lector/src/hooks/useMiniMap.tsx                   215 lines
+  packages/lector/src/hooks/useMiniMap.test.tsx              575 lines (13 tests)
+
+Verification:
+  pnpm lint           ✅ Checked 63 files; no fixes applied
+  pnpm build          ✅ TSC 4.7s, DTS 5.4s, ESM 6.3s; size.json passes
+  pnpm test:unit      ✅ 13/13 passed in 641ms
+
+Bundle size baseline (post-US-001, hook not yet exported):
+  size: 39,126 / 150,000 bytes  (gzipped client bundle, +904 vs pre-implementation)
+
+Public hook contract (matches plan §2):
+  useMiniMap({ width = 80, gap = 2 }) returns:
+    pages: MiniMapPageLayout[]                      // proportional layout
+    totalHeight: number
+    viewport: { top: number, height: number }       // multi-page span aware
+    scrollOffsetForMinimapY: (y) => offset
+    minimapYForScrollOffset: (offset) => y
+
+Architecture decisions held to:
+  ✅ NO scrollOffset field added to PDFState — read virtualizer.scrollOffset
+     locally via requestAnimationFrame inside the hook
+  ✅ Per-page exact interpolation in BOTH forward and inverse mappings
+     (no globally linear ratio anywhere)
+  ✅ Safe empty state when virtualizer is null — no rAF, no DOM access
+  ✅ Multi-page viewport span via forwardMap(top) − forwardMap(bottom)
+  ✅ Skip-frame: setState only fires when scrollOffset OR clientHeight changes
+
+Documented deviations from plan:
+  1. Linear scan over pages[] instead of binary search in forward/inverse
+     mappings. Same O(N) virtualizer calls as binary search would need;
+     reads cleaner. Within plan ("binary-search ... or compute on the fly").
+  2. Track virtualizer.scrollElement.clientHeight alongside scrollOffset in
+     the same rAF tick — needed for criterion 5 (multi-page viewport.height
+     accuracy on resize). Same skip-frame guard, no extra rAF loop.
+
+Reusable patterns for downstream stories:
+  • makeViewports / makePdfDocumentProxy / makeMockVirtualizer / makeInitialState
+    factories in useMiniMap.test.tsx are reusable for US-002, US-003, US-004
+  • VirtualizerInjector pattern solves the "<Pages> normally calls
+    setVirtualizer" problem without mounting the real <Pages>
+  • pageNumber in pages[i] is 1-based — matches usePdfJump.jumpToPage's
+    convention so US-003 can pass it through directly
+  • Exported types MiniMapPageLayout / MiniMapViewportRect / UseMiniMapResult
+    are useful for US-003's renderPage / renderViewport prop typing
+
+Codex/gpt-5.5 status:
+  Aperture proxy at ai.tailae510b.ts.net is unreachable (Tailscale node 'ai'
+  at 100.117.172.35 not responding on standard LLM ports). Codex CLI is
+  installed and logged in via ChatGPT, but cannot route to gpt-5.5 specifically
+  until Aperture is back online. Architect (Claude/Opus) is the active
+  reviewer in the loop. Will run a codex/gpt-5.5 critic pass over the final
+  diff if Aperture comes back before US-007.
+
+═══════════════════════════════════════════════════════════════════════════════
+US-002: MiniMap sub-components                       ✅ COMPLETE  2026-04-27
+═══════════════════════════════════════════════════════════════════════════════
+
+Files created:
+  packages/lector/src/components/minimap/minimap-page.tsx       46 lines
+  packages/lector/src/components/minimap/minimap-page.test.tsx  60 lines (6 tests)
+  packages/lector/src/components/minimap/minimap-viewport.tsx   50 lines
+  packages/lector/src/components/minimap/minimap-viewport.test.tsx 65 lines (7 tests)
+  packages/lector/src/components/minimap/minimap-highlight.tsx  ~115 lines
+  packages/lector/src/components/minimap/minimap-highlight.test.tsx 240 lines (9 tests)
+
+TDD discipline:
+  • All 22 tests written FIRST (RED), verified failing with module-not-found
+  • Implementations written GREEN, all 22 tests pass + 22 from US-001 = 44 total
+  • Cleanup pattern (afterEach(cleanup)) added — required for vitest browser
+    mode (render() doesn't auto-clean between tests in the same file)
+
+Verification:
+  pnpm lint        ✅ Checked 69 files, no fixes, no warnings
+  pnpm test:unit   ✅ 44/44 passed in 1.16s
+
+API surface:
+  MiniMapPage(pageNumber, width, height, children?)
+    — `position: relative` so children can absolute-anchor
+    — data-page-number, data-testid for debug + tests
+    — forwardRef + className/style passthrough
+
+  MiniMapViewport(top, height, children?)
+    — `position: absolute`, full-width, `pointerEvents: auto` for US-004 drag
+    — data-minimap-viewport for debug
+    — forwardRef + className/style passthrough; consumer can override pointerEvents
+
+  MiniMapHighlight(highlight, pageWidth, pageHeight, sourcePageHeight?, onClick?)
+    — Renders one absolutely-positioned pill per rect in highlight.rectangles
+    — Handles type="percent" (rect.top/100 * pageHeight) and type="pixels"
+      (rect.top/sourcePageHeight * pageHeight)
+    — Min-height clamp at 2px so tiny highlights remain visible
+    — onClick passthrough for US-003 wiring; pill becomes role="button" tabIndex=0
+      when onClick is provided
+    — data-highlight-uuid + data-rect-index for debug + tests
+
+───────────────────────────────────────────────────────────────────────────────
+Next: US-003 — MiniMap orchestrator + click-to-jump
+───────────────────────────────────────────────────────────────────────────────

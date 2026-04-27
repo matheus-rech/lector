@@ -9,6 +9,14 @@ export { ColoredHighlightLayer } from "./components/layers/colored-highlight/col
 export { CustomLayer } from "./components/layers/custom-layer";
 export { HighlightLayer } from "./components/layers/highlight-layer";
 export { TextLayer } from "./components/layers/text-layer";
+export {
+	MiniMap,
+	MiniMapHighlight,
+	MiniMapPage,
+	type MiniMapProps,
+	type MiniMapRenderPageArgs,
+	MiniMapViewport,
+} from "./components/minimap";
 export { Outline, OutlineChildItems, OutlineItem } from "./components/outline";
 export { Page } from "./components/page";
 export {
@@ -32,6 +40,12 @@ export {
 export { calculateHighlightRects } from "./hooks/search/useSearchPosition";
 export type { Annotation } from "./hooks/useAnnotations";
 export { useAnnotations } from "./hooks/useAnnotations";
+export {
+	type MiniMapPageLayout,
+	type MiniMapViewportRect,
+	type UseMiniMapResult,
+	useMiniMap,
+} from "./hooks/useMiniMap";
 export { usePageRendered } from "./hooks/usePageRendered";
 export {
 	LinkService,

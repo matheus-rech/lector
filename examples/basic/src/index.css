@@ -1,3 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html,
+body,
+#root {
+	height: 100%;
+}
+
+/* Smooth color transitions when toggling dark mode */
+html {
+	transition: background-color 200ms ease;
+}
+
+/* Small refinement to the lector text-layer cursor for the demo */
+.textLayer {
+	cursor: text;
+}
