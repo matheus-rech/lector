@@ -3,8 +3,11 @@ import {
 	forwardRef,
 	type HTMLProps,
 	type ReactNode,
+	type PointerEvent as ReactPointerEvent,
 	useCallback,
+	useEffect,
 	useMemo,
+	useRef,
 } from "react";
 import { usePdfJump } from "../../hooks/pages/usePdfJump";
 import {
@@ -107,6 +110,120 @@ export const MiniMap = forwardRef<HTMLDivElement, MiniMapProps>(
 			[jumpToHighlightRects, onHighlightClick],
 		);
 
+		// ---------- Drag-scrub (US-004) ----------
+		const containerRef = useRef<HTMLDivElement | null>(null);
+		const isDraggingRef = useRef(false);
+		const rafRef = useRef<number | null>(null);
+		const lastDragClientYRef = useRef(0);
+
+		// Map a clientY (viewport coordinate) to a clamped real scrollOffset.
+		const computeScrollOffsetForClientY = useCallback(
+			(clientY: number): number => {
+				const container = containerRef.current;
+				if (!container || !virtualizer) return 0;
+				const rect = container.getBoundingClientRect();
+				const localY = clientY - rect.top;
+				const rawOffset = scrollOffsetForMinimapY(localY);
+				const totalSize = virtualizer.getTotalSize();
+				const clientHeight = virtualizer.scrollElement?.clientHeight ?? 0;
+				const maxOffset = Math.max(0, totalSize - clientHeight);
+				return Math.max(0, Math.min(maxOffset, rawOffset));
+			},
+			[virtualizer, scrollOffsetForMinimapY],
+		);
+
+		const performScrub = useCallback(
+			(clientY: number) => {
+				if (!virtualizer) return;
+				const offset = computeScrollOffsetForClientY(clientY);
+				virtualizer.scrollToOffset(offset, {
+					align: "start",
+					behavior: "auto",
+				});
+			},
+			[virtualizer, computeScrollOffsetForClientY],
+		);
+
+		const cancelPendingFrame = useCallback(() => {
+			if (rafRef.current !== null) {
+				cancelAnimationFrame(rafRef.current);
+				rafRef.current = null;
+			}
+		}, []);
+
+		const handleViewportPointerDown = useCallback(
+			(event: ReactPointerEvent<HTMLDivElement>) => {
+				// Only respond to primary button. Pointer-events with button==0
+				// are mouse-primary or touch.
+				if (event.button !== 0 && event.pointerType === "mouse") return;
+				try {
+					event.currentTarget.setPointerCapture(event.pointerId);
+				} catch {
+					// setPointerCapture can throw in test environments without
+					// proper DOM support — degrade gracefully.
+				}
+				isDraggingRef.current = true;
+				lastDragClientYRef.current = event.clientY;
+				performScrub(event.clientY);
+			},
+			[performScrub],
+		);
+
+		const handleViewportPointerMove = useCallback(
+			(event: ReactPointerEvent<HTMLDivElement>) => {
+				if (!isDraggingRef.current) return;
+				lastDragClientYRef.current = event.clientY;
+				if (rafRef.current === null) {
+					rafRef.current = requestAnimationFrame(() => {
+						rafRef.current = null;
+						if (isDraggingRef.current) {
+							performScrub(lastDragClientYRef.current);
+						}
+					});
+				}
+			},
+			[performScrub],
+		);
+
+		const handleViewportPointerUp = useCallback(
+			(event: ReactPointerEvent<HTMLDivElement>) => {
+				const target = event.currentTarget;
+				try {
+					if (target.hasPointerCapture?.(event.pointerId)) {
+						target.releasePointerCapture(event.pointerId);
+					}
+				} catch {
+					// Ignore — degrade gracefully.
+				}
+				isDraggingRef.current = false;
+				cancelPendingFrame();
+			},
+			[cancelPendingFrame],
+		);
+
+		// Cleanup on unmount: cancel any pending rAF frame so we don't call
+		// scrollToOffset on a torn-down virtualizer.
+		useEffect(
+			() => () => {
+				cancelPendingFrame();
+				isDraggingRef.current = false;
+			},
+			[cancelPendingFrame],
+		);
+
+		// Combined ref: forward to consumer + capture for getBoundingClientRect.
+		const setContainerRef = useCallback(
+			(node: HTMLDivElement | null) => {
+				containerRef.current = node;
+				if (typeof ref === "function") {
+					ref(node);
+				} else if (ref) {
+					ref.current = node;
+				}
+			},
+			[ref],
+		);
+
 		const containerStyle: CSSProperties = {
 			position: "relative",
 			width,
@@ -132,7 +249,7 @@ export const MiniMap = forwardRef<HTMLDivElement, MiniMapProps>(
 
 		return (
 			<Primitive.div
-				ref={ref}
+				ref={setContainerRef}
 				data-testid="minimap"
 				{...rest}
 				style={containerStyle}
@@ -185,7 +302,15 @@ export const MiniMap = forwardRef<HTMLDivElement, MiniMapProps>(
 				{renderViewport ? (
 					renderViewport(viewport)
 				) : (
-					<MiniMapViewport top={viewport.top} height={viewport.height} />
+					<MiniMapViewport
+						top={viewport.top}
+						height={viewport.height}
+						onPointerDown={handleViewportPointerDown}
+						onPointerMove={handleViewportPointerMove}
+						onPointerUp={handleViewportPointerUp}
+						onPointerCancel={handleViewportPointerUp}
+						onLostPointerCapture={handleViewportPointerUp}
+					/>
 				)}
 				{children}
 				{/* `scrollOffsetForMinimapY` is exposed for US-004 drag handler;

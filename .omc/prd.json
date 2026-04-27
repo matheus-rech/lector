@@ -77,7 +77,8 @@
       "id": "US-004",
       "title": "MiniMap drag-scrub interaction",
       "priority": 4,
-      "passes": false,
+      "passes": true,
+      "completed_at": "2026-04-27T10:14:45Z",
       "files": [
         "packages/lector/src/components/minimap/minimap.tsx"
       ],
