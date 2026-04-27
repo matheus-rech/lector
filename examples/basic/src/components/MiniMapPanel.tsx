@@ -15,26 +15,19 @@ export function MiniMapPanel({ width = 96 }: MiniMapPanelProps) {
 				MiniMap
 			</div>
 			<div className="flex-1 overflow-y-auto p-2">
-				<MiniMap
-					width={width}
-					gap={3}
-					className="mx-auto bg-gray-50 dark:bg-gray-800"
-					onHighlightClick={(h: ColoredHighlight) => {
-						// Console hint for the demo so users can verify the wiring.
-						// eslint-disable-next-line no-console
-						console.info(
-							`[MiniMap] jumped to highlight ${h.uuid.slice(0, 8)} on page ${h.pageNumber}`,
-						);
-					}}
-					renderViewport={({ top, height }) => (
-						<MiniMapViewport
-							top={top}
-							height={height}
-							className="border-2 border-blue-500/70"
-							style={{ backgroundColor: "rgba(59, 130, 246, 0.18)" }}
-						/>
-					)}
-				/>
+        <MiniMap
+          width={width}
+          gap={3}
+          className="mx-auto bg-gray-50 dark:bg-gray-800"
+          renderViewport={({ top, height }) => (
+            <MiniMapViewport
+              top={top}
+              height={height}
+              className="border-2 border-blue-500/70"
+              style={{ backgroundColor: "rgba(59, 130, 246, 0.18)" }}
+            />
+          )}
+        />
 			</div>
 		</aside>
 	);
