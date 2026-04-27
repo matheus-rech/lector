@@ -64,3 +64,6 @@ bun.lockb
 .omc/sessions/
 .omc/project-memory.json
 .omc/.DS_Store
+
+# Claude Code local state
+.claude/

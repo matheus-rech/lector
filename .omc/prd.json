@@ -8,7 +8,8 @@
       "id": "US-001",
       "title": "useMiniMap hook: layout math + rAF subscription + null-safe state",
       "priority": 1,
-      "passes": false,
+      "passes": true,
+      "completed_at": "2026-04-27T07:46:00Z",
       "files": [
         "packages/lector/src/hooks/useMiniMap.tsx"
       ],

@@ -1,0 +1,64 @@
+MiniMap implementation progress
+
+═══════════════════════════════════════════════════════════════════════════════
+US-001: useMiniMap hook                              ✅ COMPLETE  2026-04-27
+═══════════════════════════════════════════════════════════════════════════════
+
+Files created:
+  packages/lector/src/hooks/useMiniMap.tsx                   215 lines
+  packages/lector/src/hooks/useMiniMap.test.tsx              575 lines (13 tests)
+
+Verification:
+  pnpm lint           ✅ Checked 63 files; no fixes applied
+  pnpm build          ✅ TSC 4.7s, DTS 5.4s, ESM 6.3s; size.json passes
+  pnpm test:unit      ✅ 13/13 passed in 641ms
+
+Bundle size baseline (post-US-001, hook not yet exported):
+  size: 39,126 / 150,000 bytes  (gzipped client bundle, +904 vs pre-implementation)
+
+Public hook contract (matches plan §2):
+  useMiniMap({ width = 80, gap = 2 }) returns:
+    pages: MiniMapPageLayout[]                      // proportional layout
+    totalHeight: number
+    viewport: { top: number, height: number }       // multi-page span aware
+    scrollOffsetForMinimapY: (y) => offset
+    minimapYForScrollOffset: (offset) => y
+
+Architecture decisions held to:
+  ✅ NO scrollOffset field added to PDFState — read virtualizer.scrollOffset
+     locally via requestAnimationFrame inside the hook
+  ✅ Per-page exact interpolation in BOTH forward and inverse mappings
+     (no globally linear ratio anywhere)
+  ✅ Safe empty state when virtualizer is null — no rAF, no DOM access
+  ✅ Multi-page viewport span via forwardMap(top) − forwardMap(bottom)
+  ✅ Skip-frame: setState only fires when scrollOffset OR clientHeight changes
+
+Documented deviations from plan:
+  1. Linear scan over pages[] instead of binary search in forward/inverse
+     mappings. Same O(N) virtualizer calls as binary search would need;
+     reads cleaner. Within plan ("binary-search ... or compute on the fly").
+  2. Track virtualizer.scrollElement.clientHeight alongside scrollOffset in
+     the same rAF tick — needed for criterion 5 (multi-page viewport.height
+     accuracy on resize). Same skip-frame guard, no extra rAF loop.
+
+Reusable patterns for downstream stories:
+  • makeViewports / makePdfDocumentProxy / makeMockVirtualizer / makeInitialState
+    factories in useMiniMap.test.tsx are reusable for US-002, US-003, US-004
+  • VirtualizerInjector pattern solves the "<Pages> normally calls
+    setVirtualizer" problem without mounting the real <Pages>
+  • pageNumber in pages[i] is 1-based — matches usePdfJump.jumpToPage's
+    convention so US-003 can pass it through directly
+  • Exported types MiniMapPageLayout / MiniMapViewportRect / UseMiniMapResult
+    are useful for US-003's renderPage / renderViewport prop typing
+
+Codex/gpt-5.5 status:
+  Aperture proxy at ai.tailae510b.ts.net is unreachable (Tailscale node 'ai'
+  at 100.117.172.35 not responding on standard LLM ports). Codex CLI is
+  installed and logged in via ChatGPT, but cannot route to gpt-5.5 specifically
+  until Aperture is back online. Architect (Claude/Opus) is the active
+  reviewer in the loop. Will run a codex/gpt-5.5 critic pass over the final
+  diff if Aperture comes back before US-007.
+
+───────────────────────────────────────────────────────────────────────────────
+Next: US-002 — MiniMapPage / MiniMapHighlight / MiniMapViewport sub-components
+───────────────────────────────────────────────────────────────────────────────
