@@ -157,25 +157,19 @@ const WithMiniMap = () => {
 						MiniMap
 					</div>
 					<div className="flex-1 overflow-y-auto p-2">
-						<MiniMap
-							width={104}
-							gap={3}
-							className="mx-auto bg-gray-50"
-							onHighlightClick={(h: ColoredHighlight) => {
-								// eslint-disable-next-line no-console
-								console.info(
-									`[MiniMap] jumped to highlight on page ${h.pageNumber}`,
-								);
-							}}
-							renderViewport={({ top, height }) => (
-								<MiniMapViewport
-									top={top}
-									height={height}
-									className="border-2 border-blue-500/70"
-									style={{ backgroundColor: "rgba(59, 130, 246, 0.18)" }}
-								/>
-							)}
-						/>
+            <MiniMap
+              width={104}
+              gap={3}
+              className="mx-auto bg-gray-50"
+              renderViewport={({ top, height }) => (
+                <MiniMapViewport
+                  top={top}
+                  height={height}
+                  className="border-2 border-blue-500/70"
+                  style={{ backgroundColor: "rgba(59, 130, 246, 0.18)" }}
+                />
+              )}
+            />
 					</div>
 					<div className="max-h-40 overflow-y-auto border-t p-2">
 						<HighlightsLog />
