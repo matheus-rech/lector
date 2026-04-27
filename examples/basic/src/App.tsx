@@ -33,7 +33,7 @@ export default function App() {
 
 	useEffect(() => {
 		document.documentElement.classList.toggle("dark", dark);
-		document.body.style.backgroundColor = dark ? "#0F0E0A" : "#FBF8F2";
+		document.body.style.backgroundColor = dark ? "#0a0a0a" : "#f3f4f6";
 	}, [dark]);
 
 	// Reset highlight count when the document or clear-key changes; the
@@ -86,20 +86,16 @@ export default function App() {
 			className={`flex h-screen flex-col ${dark ? "dark" : ""}`}
 			style={{ colorScheme: dark ? "dark" : "light" }}
 		>
-			<header className="flex items-center justify-between border-b border-paper-300 bg-paper-50 px-5 py-3 shadow-paper dark:border-ink-50 dark:bg-ink-200">
-				<div className="flex items-baseline gap-4">
-					<h1 className="font-display text-2xl font-semibold leading-none tracking-tight text-ink dark:text-paper-100">
-						lector
-						<span className="ml-1 text-base font-normal italic text-brass-500 dark:text-brass-300">
-							demo
-						</span>
+			<header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+				<div className="flex items-center gap-3">
+					<h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+						lector demo
 					</h1>
-					<span className="hidden h-4 w-px bg-paper-300 dark:bg-ink-50 sm:block" />
-					<span className="hidden font-mono text-[11px] uppercase tracking-[0.18em] text-ink-50 dark:text-paper-100/60 sm:inline">
+					<span className="text-xs text-gray-500 dark:text-gray-400">
 						{docTitle}
 					</span>
 				</div>
-				<div className="flex items-center gap-4">
+				<div className="flex items-center gap-3">
 					<PdfPicker
 						currentSampleId={uploadedSource ? null : sample.id}
 						onSampleChange={handleSampleChange}
@@ -109,9 +105,9 @@ export default function App() {
 						href="https://github.com/anaralabs/lector"
 						target="_blank"
 						rel="noopener noreferrer"
-						className="text-[11px] uppercase tracking-[0.18em] text-ink-50 transition-colors hover:text-brass-700 dark:text-paper-100/60 dark:hover:text-brass-300"
+						className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
 					>
-						GitHub ↗
+						GitHub →
 					</a>
 				</div>
 			</header>
@@ -120,9 +116,9 @@ export default function App() {
 				key={`${source}-${clearKey}`}
 				source={source}
 				documentOptions={documentOptions}
-				className="flex flex-1 flex-col overflow-hidden bg-paper-50 dark:bg-ink-200"
+				className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-gray-900"
 				loader={
-					<div className="flex flex-1 items-center justify-center font-display text-base italic text-ink-50 dark:text-paper-100/60">
+					<div className="flex flex-1 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
 						Loading {docTitle}…
 					</div>
 				}

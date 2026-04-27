@@ -30,7 +30,7 @@ export function Viewer({ dark, highlightColor }: ViewerProps) {
 					externalLinksEnabled
 					jumpOptions={{ behavior: "smooth", align: "start" }}
 				/>
-				<HighlightLayer className="bg-yellow-300/70 mix-blend-darken outline outline-2 outline-yellow-500/80" />
+				<HighlightLayer className="bg-yellow-300/60 mix-blend-darken" />
 				<ColoredHighlightLayer />
 				<SelectionHighlightTool color={highlightColor} />
 			</Page>

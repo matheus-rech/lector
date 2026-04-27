@@ -2,59 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-	html,
-	body,
-	#root {
-		height: 100%;
-	}
-
-	html {
-		transition: background-color 200ms ease;
-		font-family: theme("fontFamily.sans");
-		color: theme("colors.ink.DEFAULT");
-		background-color: theme("colors.paper.50");
-		-webkit-font-smoothing: antialiased;
-		-moz-osx-font-smoothing: grayscale;
-		text-rendering: optimizeLegibility;
-	}
-
-	html.dark {
-		color: theme("colors.paper.50");
-		background-color: theme("colors.ink.300");
-	}
-
-	/* Editorial display headings */
-	.font-display {
-		font-family: theme("fontFamily.display");
-		font-feature-settings: "ss01", "ss02";
-		letter-spacing: -0.012em;
-		font-variation-settings: "opsz" 32;
-	}
+html,
+body,
+#root {
+	height: 100%;
 }
 
-@layer utilities {
-	/* Paper-grain background — subtle SVG noise.
-	   Inlined as data URL so it ships zero extra requests. */
-	.bg-paper-grain {
-		background-color: theme("colors.paper.50");
-		background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch' /%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.10 0 0 0 0 0.09 0 0 0 0 0.07 0 0 0 0.045 0' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' /%3E%3C/svg%3E");
-		background-repeat: repeat;
-	}
-	.dark .bg-paper-grain {
-		background-color: theme("colors.ink.300");
-		background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch' /%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' /%3E%3C/svg%3E");
-	}
-
-	/* Hairline divider — looks crisper than full borders for toolbar separators */
-	.divider-hairline {
-		width: 1px;
-		height: 1.25rem;
-		background-color: theme("colors.paper.300");
-	}
-	.dark .divider-hairline {
-		background-color: theme("colors.ink.50");
-	}
+html {
+	transition: background-color 200ms ease;
 }
 
 /* PDF text-layer cursor */
@@ -65,25 +20,23 @@
 /* MiniMap is headless by default — give the demo's mini pages visible
    styling so the right rail shows more than just an empty scrubber. */
 [data-testid="minimap-page"] {
-	background-color: theme("colors.paper.100");
-	border: 1px solid theme("colors.paper.300");
+	background-color: #f9fafb;
+	border: 1px solid #e5e7eb;
 	border-radius: 2px;
-	box-shadow: 0 1px 1px rgba(26, 24, 20, 0.04);
 	cursor: pointer;
 	transition:
-		border-color 140ms ease,
-		transform 140ms ease,
-		box-shadow 140ms ease;
+		border-color 120ms ease,
+		background-color 120ms ease;
 }
 [data-testid="minimap-page"]:hover {
-	border-color: theme("colors.brass.500");
-	box-shadow: 0 2px 8px -2px rgba(164, 115, 31, 0.35);
-	transform: translateX(-1px);
+	border-color: #60a5fa;
+	background-color: #eff6ff;
 }
 .dark [data-testid="minimap-page"] {
-	background-color: theme("colors.ink.100");
-	border-color: theme("colors.ink.50");
+	background-color: #1f2937;
+	border-color: #374151;
 }
 .dark [data-testid="minimap-page"]:hover {
-	border-color: theme("colors.brass.300");
+	border-color: #3b82f6;
+	background-color: #1e3a8a;
 }
