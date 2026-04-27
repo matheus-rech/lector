@@ -1,0 +1,150 @@
+---
+title: MiniMap
+description: A scroll-position indicator with colored highlight overlays and a draggable scrubber
+---
+
+import WithMiniMap from "@/components/minimap.tsx";
+
+<WithMiniMap />
+
+## Overview
+
+`<MiniMap />` is a vertical scroll-position indicator: a column of
+proportionally-sized page rectangles with colored highlight overlays
+and a draggable viewport scrubber. It's the perfect companion to
+`<ColoredHighlightLayer />` — every coloured highlight appears as a
+pill in the minimap at the corresponding vertical position, so a
+50-page document becomes a glanceable map of where your evidence,
+notes, or annotations live.
+
+## Features
+
+- **DOM-only rendering** — no canvas, no PDF.js render tasks. Handles
+  500-page documents trivially.
+- **Colored highlight overlays** — every entry in `coloredHighlights`
+  appears as a pill on the right page in the minimap.
+- **Click-to-jump** — click a page to jump there; click a highlight pill
+  to jump straight to that quote in the main viewer.
+- **Draggable scrubber** — pointer-down on the viewport overlay and
+  drag to scrub through the document at any speed.
+- **Headless** — every visible piece (page cell, pill, scrubber) can
+  be replaced via render-prop overrides.
+
+## Basic Usage
+
+```tsx
+"use client";
+
+import {
+  CanvasLayer,
+  ColoredHighlightLayer,
+  MiniMap,
+  Page,
+  Pages,
+  Root,
+  TextLayer,
+} from "@anaralabs/lector";
+
+export default function MyPdfViewer() {
+  return (
+    <Root source="/my-document.pdf" className="grid grid-cols-[1fr_96px] h-screen">
+      <Pages>
+        <Page>
+          <CanvasLayer />
+          <TextLayer />
+          <ColoredHighlightLayer />
+        </Page>
+      </Pages>
+      <MiniMap />
+    </Root>
+  );
+}
+```
+
+That's it. Add `<ColoredHighlightLayer />` (or call `addColoredHighlight`
+on the store) and the highlights appear in the minimap automatically.
+
+## API
+
+### `<MiniMap>` props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `width` | `number` | `80` | Width of the minimap in pixels. Pages are scaled proportionally. |
+| `gap` | `number` | `2` | Vertical gap between mini pages in pixels. |
+| `onHighlightClick` | `(h: ColoredHighlight) => void` | — | Fired after a highlight pill is clicked + the main viewer jumps to it. |
+| `renderPage` | `(args) => ReactNode` | — | Replace the default page rendering. See below. |
+| `renderViewport` | `({ top, height }) => ReactNode` | — | Replace the default viewport scrubber rendering. |
+| Standard `<div>` props | | | `className`, `style`, `ref`, etc. |
+
+### Render-prop overrides
+
+```tsx
+<MiniMap
+  renderPage={({ page, highlights, sourcePageHeight, onPageClick, onHighlightClick }) => (
+    <div data-page={page.pageNumber} style={{ width: page.width, height: page.height }}>
+      {/* your custom rendering */}
+    </div>
+  )}
+  renderViewport={({ top, height }) => (
+    <div
+      style={{ position: "absolute", top, height, width: "100%" }}
+      className="border-2 border-blue-500"
+    />
+  )}
+/>
+```
+
+When you provide `renderViewport`, the default drag-scrub handlers are
+NOT attached — your custom viewport is responsible for its own
+interactions. If you want drag-scrub on a custom viewport, read
+`scrollOffsetForMinimapY` from the `useMiniMap` hook.
+
+### `useMiniMap()` hook
+
+```tsx
+import { useMiniMap } from "@anaralabs/lector";
+
+const {
+  pages,                       // [{ pageNumber, top, width, height }]
+  totalHeight,                 // total minimap height in px
+  viewport,                    // { top, height } in minimap coords
+  scrollOffsetForMinimapY,     // (y) => virtualizer scrollOffset
+  minimapYForScrollOffset,     // (offset) => minimap Y
+} = useMiniMap({ width: 80, gap: 2 });
+```
+
+The hook is what `<MiniMap />` uses internally. Use it directly when
+you want to build a fully custom minimap (e.g., a circular minimap, a
+horizontal one, or one with embedded thumbnails).
+
+## Coexistence with `<Thumbnails>`
+
+`<MiniMap />` and `<Thumbnails />` are different primitives. Thumbnails
+render full-quality canvas previews of each page (good for a navigation
+pane); MiniMap renders DOM-only proportional rectangles with highlight
+overlays (good for a glanceable scroll-position indicator). Mount both
+side-by-side without conflict.
+
+## Dark Mode
+
+Style via the standard `className` / `style` props — there's no special
+dark-mode CSS. The `<MiniMapViewport>` accepts a `style` override that
+takes precedence over the defaults, so you can recolor the scrubber
+overlay per theme.
+
+## Best Practices
+
+- Pair with `<ColoredHighlightLayer>` — that's what the highlight pills
+  visualize.
+- Keep `width` small (80–120px). The minimap is meant to be glanceable.
+- For tall containers, wrap `<MiniMap>` in an overflow-y-auto div so
+  long documents scroll naturally.
+- Use a `renderViewport` override to recolor the scrubber to match your
+  brand without touching the headless internals.
+
+## Related
+
+- [`<HighlightLayer>`](./highlight) — the search-result highlight overlay
+- [`<ColoredHighlightLayer>`](./select) — user-driven persistent highlights
+- [`<Thumbnails>`](./thumbnails) — full-fidelity page thumbnails
