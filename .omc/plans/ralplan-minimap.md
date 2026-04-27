@@ -1,6 +1,6 @@
 # RALPLAN: `<MiniMap />` for `@anaralabs/lector`
 
-**Status**: Planner v2 (post-Architect revision) — awaiting Critic review
+**Status**: Planner v2 (post-Architect revision) — Critic approved
 **Target package**: `packages/lector` (`@anaralabs/lector`)
 **Date**: 2026-04-26
 
