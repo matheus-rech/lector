@@ -58,3 +58,9 @@ bun.lockb
 
 # Cursor
 .cursorrules
+
+# OMC (oh-my-claudecode) — track plans and PRDs, ignore ephemeral session state
+.omc/state/
+.omc/sessions/
+.omc/project-memory.json
+.omc/.DS_Store
