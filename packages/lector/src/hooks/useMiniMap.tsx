@@ -142,12 +142,16 @@ export const useMiniMap = (opts?: UseMiniMapOptions): UseMiniMapResult => {
 		let lastClientHeight = Number.NaN;
 
 		const tick = () => {
-			// Normalize NaN/Infinity to 0 — without this, `NaN !== NaN` would
+			// Normalize NaN/Infinity/null to 0 — without this, `NaN !== NaN` would
 			// defeat the skip-frame guard and call setState every frame if the
 			// virtualizer ever reported NaN for either value (defensive).
-			const rawOffset = virtualizer.scrollOffset;
+			// Note: `Number.isFinite` is not a TypeScript type guard, so we use
+			// `??` first to rule out null/undefined, then `Number.isFinite` to
+			// rule out NaN/Infinity.
+			const rawOffset: number = virtualizer.scrollOffset ?? 0;
 			const nextOffset = Number.isFinite(rawOffset) ? rawOffset : 0;
-			const rawClientHeight = virtualizer.scrollElement?.clientHeight;
+			const rawClientHeight: number =
+				virtualizer.scrollElement?.clientHeight ?? 0;
 			const nextClientHeight = Number.isFinite(rawClientHeight)
 				? rawClientHeight
 				: 0;
