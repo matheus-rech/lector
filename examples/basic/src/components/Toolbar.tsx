@@ -7,6 +7,7 @@ import {
 	ZoomIn,
 	ZoomOut,
 } from "@anaralabs/lector";
+import { HighlightNavigation } from "./HighlightNavigation";
 
 export const HIGHLIGHT_COLORS = [
 	{ name: "yellow", value: "rgba(250, 204, 21, 0.45)" },
@@ -15,6 +16,8 @@ export const HIGHLIGHT_COLORS = [
 	{ name: "pink", value: "rgba(236, 72, 153, 0.45)" },
 ];
 
+import type { LeftPanelMode } from "./LeftPanel";
+
 interface ToolbarProps {
 	highlightColor: string;
 	onHighlightColorChange: (color: string) => void;
@@ -22,10 +25,8 @@ interface ToolbarProps {
 	highlightCount: number;
 	dark: boolean;
 	onDarkChange: (dark: boolean) => void;
-	leftPanel: "thumbnails" | "outline" | "search" | "off";
-	onLeftPanelChange: (
-		panel: "thumbnails" | "outline" | "search" | "off",
-	) => void;
+	leftPanel: LeftPanelMode;
+	onLeftPanelChange: (panel: LeftPanelMode) => void;
 	miniMapVisible: boolean;
 	onMiniMapVisibleChange: (visible: boolean) => void;
 }
@@ -105,22 +106,20 @@ export function Toolbar({
 				>
 					Clear ({highlightCount})
 				</button>
+				<HighlightNavigation />
 			</div>
 
 			<div className="ml-auto flex items-center gap-2">
 				{/* Left panel switcher */}
 				<select
 					value={leftPanel}
-					onChange={(e) =>
-						onLeftPanelChange(
-							e.target.value as "thumbnails" | "outline" | "search" | "off",
-						)
-					}
+					onChange={(e) => onLeftPanelChange(e.target.value as LeftPanelMode)}
 					className="rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800"
 				>
 					<option value="thumbnails">Thumbnails</option>
 					<option value="outline">Outline</option>
 					<option value="search">Search</option>
+					<option value="extract">Extract</option>
 					<option value="off">No left panel</option>
 				</select>
 
