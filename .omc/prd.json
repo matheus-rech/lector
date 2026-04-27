@@ -117,7 +117,8 @@
       "id": "US-006",
       "title": "Docs page + example app integration",
       "priority": 6,
-      "passes": false,
+      "passes": true,
+      "completed_at": "2026-04-27T10:36:00Z",
       "files": [
         "packages/docs/content/**/minimap*.mdx",
         "examples/basic/src/**"
@@ -134,7 +135,9 @@
       "id": "US-007",
       "title": "Bundle size verification",
       "priority": 7,
-      "passes": false,
+      "passes": true,
+      "completed_at": "2026-04-27T10:37:00Z",
+      "result": "Final size: 40913 / 150000 bytes (gzipped). Delta vs pre-MiniMap baseline (39126): +1787 bytes (well within the 4096 byte target).",
       "files": [],
       "acceptanceCriteria": [
         "Record baseline bundle size BEFORE the change (size from current dist/index.js minified+gzipped via size-limit, in kB) — captured in progress.txt",
