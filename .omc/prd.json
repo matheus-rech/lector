@@ -1,0 +1,142 @@
+{
+  "title": "MiniMap component for @anaralabs/lector",
+  "source_plan": ".omc/plans/ralplan-minimap.md",
+  "execution_mode": "sequential",
+  "max_parallel_subagents": 2,
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "useMiniMap hook: layout math + rAF subscription + null-safe state",
+      "priority": 1,
+      "passes": false,
+      "files": [
+        "packages/lector/src/hooks/useMiniMap.tsx"
+      ],
+      "acceptanceCriteria": [
+        "Hook signature exactly matches plan §2: returns { pages, totalHeight, viewport, scrollOffsetForMinimapY, minimapYForScrollOffset }",
+        "Layout: pages[i].height = (viewports[i].height / viewports[i].width) * width — verified by Vitest with mixed-aspect viewport fixtures (3 portrait + 1 landscape) where portrait minimap heights all equal and the landscape minimap height differs in the expected ratio",
+        "Layout: pages[i].top = sum of prior pageHeights + i * gap — verified by Vitest assertion across N=5 mixed pages",
+        "Forward mapping: viewport.top is computed via per-page binary search, NOT a global linear ratio — verified by Vitest assertion that on a (300, 300, 600) heights-array, scrollOffset=350 maps into page 1 (not 0) at fractional position 50/300",
+        "Multi-page span: when virtualizer.scrollElement.clientHeight is large enough to span pages, viewport.height = forwardMap(scrollOffset+clientHeight) - forwardMap(scrollOffset) — verified by Vitest with a small clientHeight (single page) and a large clientHeight (multi-page) fixture",
+        "Inverse mapping is the true inverse of forward mapping — verified by Vitest property test: minimapYForScrollOffset(scrollOffsetForMinimapY(y)) ≈ y for 10 random y values within totalHeight (tolerance 0.5px for floating point)",
+        "rAF subscription: useEffect creates exactly one requestAnimationFrame loop when virtualizer is non-null; cancelAnimationFrame is called in cleanup — verified by Vitest spying on global requestAnimationFrame/cancelAnimationFrame counts before/after mount/unmount",
+        "rAF skip-frame: setState is called only when virtualizer.scrollOffset changes (not every frame) — verified by Vitest with a virtualizer mock whose scrollOffset stays constant for 5 frames; assert setState called at most once",
+        "Null-virtualizer safe state: when virtualizer is null, hook returns { pages: [], totalHeight: 0, viewport: { top: 0, height: 0 }, scrollOffsetForMinimapY: () => 0, minimapYForScrollOffset: () => 0 } and does NOT schedule any rAF — verified by Vitest",
+        "TypeScript: pnpm build succeeds with no type errors",
+        "Lint: pnpm lint passes (biome check)"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "MiniMapPage / MiniMapHighlight / MiniMapViewport default sub-components",
+      "priority": 2,
+      "passes": false,
+      "files": [
+        "packages/lector/src/components/minimap/minimap-page.tsx",
+        "packages/lector/src/components/minimap/minimap-highlight.tsx",
+        "packages/lector/src/components/minimap/minimap-viewport.tsx"
+      ],
+      "acceptanceCriteria": [
+        "MiniMapPage renders a div with style.width = props.width, style.height = props.height — verified by Vitest computed-style assertion",
+        "MiniMapHighlight handles HighlightRect.type === 'percent': topPx = (rect.top/100) * pageHeight, heightPx = (rect.height/100) * pageHeight — verified by Vitest with rect={top:50,height:5,type:'percent'} on pageHeight=200 produces top=100, height=10",
+        "MiniMapHighlight handles HighlightRect.type === 'pixels': topPx = (rect.top/sourcePageHeight) * pageHeight, heightPx = (rect.height/sourcePageHeight) * pageHeight — verified by Vitest fixture",
+        "MiniMapHighlight clamps minimum visible height to 2px when computed heightPx < 2 — verified by Vitest with a 0.5% highlight on a 200px page",
+        "MiniMapViewport renders absolute-positioned div with style.top and style.height from props — verified by Vitest",
+        "All three sub-components render their props.children if provided (composition) — verified by Vitest",
+        "TypeScript: pnpm build succeeds",
+        "Lint: pnpm lint passes"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "MiniMap orchestrator with click-to-jump",
+      "priority": 3,
+      "passes": false,
+      "files": [
+        "packages/lector/src/components/minimap/minimap.tsx",
+        "packages/lector/src/components/minimap/index.ts"
+      ],
+      "acceptanceCriteria": [
+        "MiniMap renders exactly N MiniMapPage children where N = pdfDocumentProxy.numPages — verified by Vitest with a mock store providing N=10",
+        "MiniMap renders highlight pills only on the page they belong to (filters by pageNumber) — verified by Vitest with highlights spread across 3 pages",
+        "Click on a MiniMapPage calls jumpToPage(pageNumber) where pageNumber is 1-based (passes the displayed page number directly, NOT pageNumber-1) — verified by Vitest spy on usePdfJump.jumpToPage",
+        "Click on a MiniMapHighlight calls jumpToHighlightRects(highlight.rectangles, type, 'center') AND fires onHighlightClick(highlight) — verified by Vitest with two spies; the click also stops propagation so page-click does not fire",
+        "renderPage prop, when provided, replaces the default MiniMapPage rendering — verified by Vitest with a custom renderPage returning a sentinel data-attribute",
+        "renderViewport prop, when provided, replaces the default MiniMapViewport rendering — verified by Vitest",
+        "Viewport overlay style.top and style.height update reactively when virtualizer.scrollOffset changes — verified by Vitest by mutating mock virtualizer.scrollOffset and asserting the overlay re-renders",
+        "Coexists with <Thumbnails>: mounting both inside <Root> does not throw or cause double-render — verified by Vitest combined-render test",
+        "SSR import smoke test: importing the MiniMap module in a Node-only environment (no window/document) does not throw at module load — verified by a Node test that imports the built file",
+        "TypeScript: pnpm build succeeds; dist types include MiniMap and MiniMapProps",
+        "Lint: pnpm lint passes"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "MiniMap drag-scrub interaction",
+      "priority": 4,
+      "passes": false,
+      "files": [
+        "packages/lector/src/components/minimap/minimap.tsx"
+      ],
+      "acceptanceCriteria": [
+        "pointerdown on viewport overlay calls setPointerCapture and sets dragging flag — verified by Vitest",
+        "pointermove while dragging calls virtualizer.scrollToOffset(offset, { align: 'start', behavior: 'auto' }) with offset computed via inverse per-page mapping — verified by Vitest with 3 simulated pointermoves at known Y positions; assert offsets match the inverse-mapping formula",
+        "pointermove handler is throttled to one update per requestAnimationFrame — verified by Vitest by firing 5 pointermoves in same tick and asserting scrollToOffset called at most once",
+        "pointerup releases pointer capture and clears dragging flag; subsequent pointermoves do NOT call scrollToOffset — verified by Vitest",
+        "Drag past minimap top clamps offset to 0 (no negative scroll) — verified by Vitest",
+        "Drag past minimap bottom clamps offset to virtualizer.getTotalSize() - clientHeight — verified by Vitest",
+        "lostpointercapture handler also clears dragging flag — verified by Vitest",
+        "Component unmount during active drag releases pointer capture without error — verified by Vitest mount/drag-start/unmount sequence",
+        "Drag uses behavior:'auto' (NOT 'smooth') so it doesn't fight the pointer — verified by spying scrollToOffset call args",
+        "TypeScript: pnpm build succeeds",
+        "Lint: pnpm lint passes"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Public API exports",
+      "priority": 5,
+      "passes": false,
+      "files": [
+        "packages/lector/src/index.ts"
+      ],
+      "acceptanceCriteria": [
+        "Exports added to packages/lector/src/index.ts: MiniMap, MiniMapPage, MiniMapHighlight, MiniMapViewport, useMiniMap, type MiniMapProps",
+        "After pnpm build, dist/index.d.ts contains exported declarations for all 6 names — verified by grep over the built type file",
+        "Existing exports unchanged — verified by diff of index.ts (only additions, no deletions/modifications)",
+        "TypeScript: pnpm build succeeds",
+        "Lint: pnpm lint passes"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Docs page + example app integration",
+      "priority": 6,
+      "passes": false,
+      "files": [
+        "packages/docs/content/**/minimap*.mdx",
+        "examples/basic/src/**"
+      ],
+      "acceptanceCriteria": [
+        "MDX page exists in packages/docs covering: import, basic usage, render-prop overrides, click-to-jump callback, drag-scrub demo — verified by reading the file",
+        "Example app (examples/basic) renders <MiniMap /> alongside existing <Pages /> — verified by manual smoke test that pnpm dev (basic example) starts without errors and the minimap is visible",
+        "At least one screenshot/recording showing colored highlights appearing in the minimap, OR a code snippet demonstrating the integration — verified by reading the MDX",
+        "Docs build succeeds: pnpm build from packages/docs has no errors",
+        "Lint: pnpm lint passes"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Bundle size verification",
+      "priority": 7,
+      "passes": false,
+      "files": [],
+      "acceptanceCriteria": [
+        "Record baseline bundle size BEFORE the change (size from current dist/index.js minified+gzipped via size-limit, in kB) — captured in progress.txt",
+        "After full implementation, pnpm test:size from packages/lector reports total ≤ 150 kB",
+        "Delta (after - before) ≤ 4 kB — captured in progress.txt and verified",
+        "If delta exceeds 4 kB, fail this story and identify the specific code path responsible (do NOT just bump the limit)"
+      ]
+    }
+  ]
+}
