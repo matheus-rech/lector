@@ -67,3 +67,6 @@ bun.lockb
 
 # Claude Code local state
 .claude/
+
+# Firecrawl crawl artifacts (local only)
+.firecrawl/

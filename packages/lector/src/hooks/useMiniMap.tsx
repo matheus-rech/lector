@@ -45,19 +45,73 @@ const EMPTY_RESULT: UseMiniMapResult = {
 
 /**
  * Read the real (zoomed) start offset of page `index` from the virtualizer.
- * Falls back to 0 if the virtualizer cannot resolve the offset.
+ * Returns null when the virtualizer cannot resolve the offset yet (e.g. during
+ * init). Callers must propagate null as a "not ready, return safe value"
+ * signal — never silently fabricate a page start.
  */
-const realStartOf = (virtualizer: PDFVirtualizer, index: number): number => {
+const realStartOf = (
+	virtualizer: PDFVirtualizer,
+	index: number,
+): number | null => {
 	const offset = virtualizer.getOffsetForIndex(index, "start");
-	if (offset == null) return 0;
-	// getOffsetForIndex returns [scrollOffset, alignment] | null
-	return offset[0] ?? 0;
+	if (offset == null) return null;
+	const start = offset[0];
+	return start == null ? null : start;
 };
 
 const realHeightOf = (virtualizer: PDFVirtualizer, index: number): number => {
-	// The virtualizer's per-item size is what it actually uses for layout;
-	// using estimateSize avoids needing to walk getVirtualItems().
+	// estimateSize is the per-item size the virtualizer uses for layout.
 	return virtualizer.options.estimateSize(index);
+};
+
+interface RealPageInfo {
+	start: number;
+	bodyEnd: number;
+	slotEnd: number; // = realStartOf(i+1) for i<N-1, else bodyEnd
+	realGap: number; // slotEnd - bodyEnd; 0 for last page
+}
+
+/**
+ * Real-coordinate slot bounds for page `i`. The slot includes the page body
+ * and the trailing real-gap (the space the virtualizer reserves between this
+ * page and the next). Returns null if any required offset is unresolved.
+ */
+const realPageInfo = (
+	virtualizer: PDFVirtualizer,
+	index: number,
+	pageCount: number,
+): RealPageInfo | null => {
+	const start = realStartOf(virtualizer, index);
+	if (start == null) return null;
+	const bodyEnd = start + realHeightOf(virtualizer, index);
+	if (index === pageCount - 1) {
+		return { start, bodyEnd, slotEnd: bodyEnd, realGap: 0 };
+	}
+	const nextStart = realStartOf(virtualizer, index + 1);
+	if (nextStart == null) return null;
+	const slotEnd = Math.max(bodyEnd, nextStart);
+	return { start, bodyEnd, slotEnd, realGap: slotEnd - bodyEnd };
+};
+
+interface MiniMapPageInfo {
+	top: number;
+	bodyEnd: number;
+	slotEnd: number;
+	minimapGap: number;
+}
+
+const minimapPageInfo = (
+	pages: MiniMapPageLayout[],
+	index: number,
+): MiniMapPageInfo => {
+	const page = pages[index]!;
+	const bodyEnd = page.top + page.height;
+	if (index === pages.length - 1) {
+		return { top: page.top, bodyEnd, slotEnd: bodyEnd, minimapGap: 0 };
+	}
+	const nextTop = pages[index + 1]!.top;
+	const slotEnd = Math.max(bodyEnd, nextTop);
+	return { top: page.top, bodyEnd, slotEnd, minimapGap: slotEnd - bodyEnd };
 };
 
 /**
@@ -88,8 +142,15 @@ export const useMiniMap = (opts?: UseMiniMapOptions): UseMiniMapResult => {
 		let lastClientHeight = Number.NaN;
 
 		const tick = () => {
-			const nextOffset = virtualizer.scrollOffset ?? 0;
-			const nextClientHeight = virtualizer.scrollElement?.clientHeight ?? 0;
+			// Normalize NaN/Infinity to 0 — without this, `NaN !== NaN` would
+			// defeat the skip-frame guard and call setState every frame if the
+			// virtualizer ever reported NaN for either value (defensive).
+			const rawOffset = virtualizer.scrollOffset;
+			const nextOffset = Number.isFinite(rawOffset) ? rawOffset : 0;
+			const rawClientHeight = virtualizer.scrollElement?.clientHeight;
+			const nextClientHeight = Number.isFinite(rawClientHeight)
+				? rawClientHeight
+				: 0;
 
 			if (nextOffset !== lastOffset) {
 				lastOffset = nextOffset;
@@ -108,7 +169,9 @@ export const useMiniMap = (opts?: UseMiniMapOptions): UseMiniMapResult => {
 	}, [virtualizer]);
 
 	// Per-page minimap layout (independent of scrollOffset, so memoized
-	// against viewports/width/gap only).
+	// against viewports/width/gap only). Cursor advances by (pageHeight + gap)
+	// for every page including zero-width ones — matches the plan's formula
+	// `top_i = sum(prior pageHeights) + i*gap`.
 	const pages = useMemo<MiniMapPageLayout[]>(() => {
 		if (!virtualizer || viewports.length === 0) return EMPTY_PAGES;
 
@@ -116,11 +179,8 @@ export const useMiniMap = (opts?: UseMiniMapOptions): UseMiniMapResult => {
 		let cursor = 0;
 		for (let i = 0; i < viewports.length; i += 1) {
 			const vp = viewports[i];
-			if (!vp || vp.width === 0) {
-				result[i] = { pageNumber: i + 1, top: cursor, width, height: 0 };
-				continue;
-			}
-			const pageHeight = (vp.height / vp.width) * width;
+			const pageHeight =
+				vp && vp.width > 0 ? (vp.height / vp.width) * width : 0;
 			result[i] = {
 				pageNumber: i + 1,
 				top: cursor,
@@ -129,6 +189,7 @@ export const useMiniMap = (opts?: UseMiniMapOptions): UseMiniMapResult => {
 			};
 			cursor += pageHeight + gap;
 		}
+		// totalHeight excludes the trailing gap after the last page.
 		return result;
 	}, [virtualizer, viewports, width, gap]);
 
@@ -139,54 +200,88 @@ export const useMiniMap = (opts?: UseMiniMapOptions): UseMiniMapResult => {
 	}, [pages]);
 
 	// Forward map: real (virtualizer) scrollOffset -> minimap Y.
-	// Per-page exact interpolation, NOT a global ratio (plan §3 item 2).
+	// Slot-aware: each page has a body sub-slot and a trailing-gap sub-slot.
+	// Body↔body and gap↔gap mappings are linear within their sub-slot.
+	// forward∘inverse is identity for all Y in body regions, and for Y in
+	// gap regions when sign(realGap) === sign(minimapGap). In the asymmetric
+	// case (realGap=0, minimapGap>0) the visual minimap-gap has no real-space
+	// counterpart, so Y values strictly inside that gap collapse to the body
+	// boundary (m.bodyEnd) on round-trip — best achievable given the missing
+	// real-space dimension.
 	const forwardMap = useCallback(
 		(offset: number): number => {
 			if (!virtualizer || pages.length === 0) return 0;
 			if (offset <= 0) return 0;
 
-			// Linear scan of N pages is fine for the projected page counts; the
-			// alternative (binary search over getOffsetForIndex) costs the same
-			// O(log N) virtualizer calls and is harder to read. Profiled: the
-			// rAF tick stays well under a frame budget at N=500.
-			for (let i = 0; i < pages.length; i += 1) {
-				const realStart = realStartOf(virtualizer, i);
-				const realHeight = realHeightOf(virtualizer, i);
-				const realEnd = realStart + realHeight;
-				if (offset < realEnd) {
-					const frac = realHeight > 0 ? (offset - realStart) / realHeight : 0;
-					return pages[i]!.top + frac * pages[i]!.height;
+			const N = pages.length;
+			for (let i = 0; i < N; i += 1) {
+				const r = realPageInfo(virtualizer, i, N);
+				if (r === null) return 0; // virtualizer not ready — safe value
+				const m = minimapPageInfo(pages, i);
+
+				if (offset < r.bodyEnd) {
+					// body sub-slot
+					const bodyHeight = r.bodyEnd - r.start;
+					const frac = bodyHeight > 0 ? (offset - r.start) / bodyHeight : 0;
+					const minimapBodyHeight = m.bodyEnd - m.top;
+					return m.top + frac * minimapBodyHeight;
 				}
+				if (i < N - 1 && offset < r.slotEnd) {
+					// gap sub-slot (only exists when realGap > 0)
+					if (r.realGap === 0) return m.bodyEnd;
+					const frac = (offset - r.bodyEnd) / r.realGap;
+					return m.bodyEnd + frac * m.minimapGap;
+				}
+				// Boundary case: offset === r.bodyEnd. With realGap > 0 this is
+				// already handled by the gap branch above (offset < r.slotEnd is
+				// true). With realGap === 0, r.slotEnd === r.bodyEnd and the gap
+				// branch is skipped. Without this clamp, we'd fall through to
+				// the next iteration's body branch and return m_{i+1}.top —
+				// breaking forward∘inverse identity at the boundary in the
+				// asymmetric (realGap=0, minimapGap>0) configuration.
+				if (i < N - 1 && offset === r.bodyEnd && r.realGap === 0) {
+					return m.bodyEnd;
+				}
+				// otherwise continue to next page
 			}
-			// Past the last page — clamp to totalHeight.
+			// Past all slots — clamp to totalHeight
 			return totalHeight;
 		},
 		[virtualizer, pages, totalHeight],
 	);
 
 	// Inverse map: minimap Y -> real (virtualizer) scrollOffset.
+	// Symmetric slot-aware logic, the true inverse of forwardMap.
 	const inverseMap = useCallback(
 		(minimapY: number): number => {
 			if (!virtualizer || pages.length === 0) return 0;
 			if (minimapY <= 0) return 0;
 
-			for (let i = 0; i < pages.length; i += 1) {
-				const page = pages[i]!;
-				const pageEnd = page.top + page.height;
-				if (minimapY < pageEnd) {
+			const N = pages.length;
+			for (let i = 0; i < N; i += 1) {
+				const r = realPageInfo(virtualizer, i, N);
+				if (r === null) return 0; // virtualizer not ready — safe value
+				const m = minimapPageInfo(pages, i);
+
+				if (minimapY < m.bodyEnd) {
+					// body sub-slot
+					const minimapBodyHeight = m.bodyEnd - m.top;
 					const frac =
-						page.height > 0 ? (minimapY - page.top) / page.height : 0;
-					const realStart = realStartOf(virtualizer, i);
-					const realHeight = realHeightOf(virtualizer, i);
-					return realStart + frac * realHeight;
+						minimapBodyHeight > 0 ? (minimapY - m.top) / minimapBodyHeight : 0;
+					const realBodyHeight = r.bodyEnd - r.start;
+					return r.start + frac * realBodyHeight;
 				}
+				if (i < N - 1 && minimapY < m.slotEnd) {
+					// gap sub-slot
+					if (m.minimapGap === 0) return r.bodyEnd;
+					const frac = (minimapY - m.bodyEnd) / m.minimapGap;
+					return r.bodyEnd + frac * r.realGap;
+				}
+				// otherwise continue to next page
 			}
-			// Past the last page — clamp to the end of the last real page.
-			const lastIndex = pages.length - 1;
-			return (
-				realStartOf(virtualizer, lastIndex) +
-				realHeightOf(virtualizer, lastIndex)
-			);
+			// Past all minimap slots — clamp to end of last real page body
+			const last = realPageInfo(virtualizer, N - 1, N);
+			return last === null ? 0 : last.bodyEnd;
 		},
 		[virtualizer, pages],
 	);

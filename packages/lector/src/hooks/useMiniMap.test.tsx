@@ -131,6 +131,38 @@ const renderUseMiniMap = ({
 	);
 };
 
+/**
+ * Helper variant: like renderUseMiniMap but also counts renders of the
+ * hook's host component. Each invocation of the renderHook callback
+ * corresponds to one render of the host (which is exactly what we want
+ * to count for the skip-frame test).
+ */
+const renderUseMiniMapWithCount = ({
+	viewports,
+	virtualizer,
+	renderCount,
+}: {
+	viewports: PageViewport[];
+	virtualizer: PDFVirtualizer | null;
+	renderCount: { current: number };
+}) => {
+	const initialState = makeInitialState(viewports);
+	const wrapper = ({ children }: { children: ReactNode }) => (
+		<PDFStore.Provider initialValue={initialState}>
+			<VirtualizerInjector virtualizer={virtualizer}>
+				{children}
+			</VirtualizerInjector>
+		</PDFStore.Provider>
+	);
+	return renderHook(
+		() => {
+			renderCount.current += 1;
+			return useMiniMap();
+		},
+		{ wrapper },
+	);
+};
+
 describe("useMiniMap", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
@@ -570,6 +602,296 @@ describe("useMiniMap", () => {
 			// scrollOffset 100 within page 0 (real h=200, minimap h=160)
 			// -> minimap Y = (100/200)*160 = 80
 			expect(result.current.viewport.top).toBeCloseTo(80, 5);
+		});
+	});
+
+	describe("real-page gaps in the virtualizer (codex review finding 1)", () => {
+		it("does not produce backward minimap-Y when scrollOffset lands inside a virtualizer gap", () => {
+			// <Pages> defaults to gap=10 and passes it to useVirtualizer. So
+			// virtualizer.scrollOffset can land inside [bodyEnd_i, realStart_{i+1}],
+			// which the original implementation maps to a negative fraction in
+			// page i+1 — producing a backward jump in the minimap.
+			const heights = [200, 200, 200];
+			const viewports = makeViewports([
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+			]);
+			const virtualizer = makeMockVirtualizer({ heights, gap: 10 });
+			const { result } = renderUseMiniMap({
+				viewports,
+				virtualizer,
+				opts: { width: 80, gap: 0 },
+			});
+
+			// Real layout: page 0 [0,200] body, [200,210] gap; page 1 [210,410] body, [410,420] gap; page 2 [420,620] body.
+			// Drive scrollOffset across the first gap region.
+			const samples = [195, 200, 205, 210, 215, 220];
+			const ys = samples.map((s) => result.current.minimapYForScrollOffset(s));
+
+			// Strictly monotonic: minimap should never jump backward as you scroll forward.
+			for (let i = 1; i < ys.length; i += 1) {
+				expect(ys[i]!).toBeGreaterThanOrEqual(ys[i - 1]!);
+			}
+		});
+
+		it("maps scrollOffset at the very end of a page body to that page's bodyEnd in minimap (no early page transition)", () => {
+			const heights = [200, 200];
+			const viewports = makeViewports([
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+			]);
+			const virtualizer = makeMockVirtualizer({ heights, gap: 10 });
+			const { result } = renderUseMiniMap({
+				viewports,
+				virtualizer,
+				opts: { width: 80, gap: 0 },
+			});
+
+			// scrollOffset = 200 is exactly at the boundary between page 0's body
+			// and the trailing real-gap. It must map to page 0's body end in the
+			// minimap (Y = 160), NOT into page 1.
+			const y = result.current.minimapYForScrollOffset(200);
+			expect(y).toBeCloseTo(160, 5);
+		});
+	});
+
+	describe("minimap gaps preserve inverse identity (codex review finding 2)", () => {
+		it("forward∘inverse is identity for minimap-Y values inside gap regions", () => {
+			// pages[i].top includes the minimap gap accumulator. The original
+			// implementation's forwardMap only mapped page bodies, so inverse
+			// identity failed for Y values that fell inside the minimap gaps.
+			const heights = [200, 200, 200];
+			const viewports = makeViewports([
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+			]);
+			const virtualizer = makeMockVirtualizer({ heights, gap: 10 });
+			const { result } = renderUseMiniMap({
+				viewports,
+				virtualizer,
+				opts: { width: 80, gap: 6 },
+			});
+
+			const pages = result.current.pages;
+			// Sample Y values: body interior + INSIDE each minimap gap region.
+			const samples = [
+				pages[0]!.top + 50, // body of page 0
+				pages[0]!.top + pages[0]!.height + 3, // inside gap after page 0
+				pages[1]!.top + 50, // body of page 1
+				pages[1]!.top + pages[1]!.height + 3, // inside gap after page 1
+				pages[2]!.top + 50, // body of page 2
+			];
+
+			for (const y of samples) {
+				const offset = result.current.scrollOffsetForMinimapY(y);
+				const yBack = result.current.minimapYForScrollOffset(offset);
+				expect(Math.abs(yBack - y)).toBeLessThan(0.5);
+			}
+		});
+	});
+
+	describe("zero-width pages still advance cursor by gap (codex review finding 3)", () => {
+		it("plan formula top_i = sum(prior pageHeights) + i*gap holds even with a zero-width page", () => {
+			// The plan formula says cursor advances by (pageHeight_i + gap) for
+			// every page including zero-height ones. The original implementation
+			// `continue`d for zero-width pages, skipping the gap accumulation.
+			const viewports = makeViewports([
+				{ width: 100, height: 200 }, // h=160
+				{ width: 0, height: 0 }, // zero-width — h=0 but must still contribute gap
+				{ width: 100, height: 200 }, // h=160
+			]);
+			const virtualizer = makeMockVirtualizer({ heights: [200, 0, 200] });
+			const { result } = renderUseMiniMap({
+				viewports,
+				virtualizer,
+				opts: { width: 80, gap: 5 },
+			});
+
+			const pages = result.current.pages;
+			expect(pages[0]!.top).toBeCloseTo(0, 5);
+			// top_1 = pageHeight_0 + gap = 160 + 5 = 165
+			expect(pages[1]!.top).toBeCloseTo(165, 5);
+			// top_2 = pageHeight_0 + gap + pageHeight_1 + gap = 160 + 5 + 0 + 5 = 170
+			expect(pages[2]!.top).toBeCloseTo(170, 5);
+		});
+	});
+
+	describe("asymmetric gap config: realGap=0 + minimapGap>0 (codex re-review finding 2)", () => {
+		it("forward(r.bodyEnd) returns m.bodyEnd (current page), NOT m.slotEnd (next page top)", () => {
+			// When the virtualizer has no gap but the minimap does, forward of the
+			// body-end boundary should pin to the current page's bodyEnd in the
+			// minimap — not "skip" into the next page's top. This keeps the
+			// mapping consistent at the boundary and makes round-trip behaviour
+			// at the boundary an identity.
+			const heights = [200, 200];
+			const viewports = makeViewports([
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+			]);
+			const virtualizer = makeMockVirtualizer({ heights, gap: 0 });
+			const { result } = renderUseMiniMap({
+				viewports,
+				virtualizer,
+				opts: { width: 80, gap: 6 },
+			});
+
+			// pages[0]: top=0, height=160, bodyEnd=160
+			// pages[1]: top=166 (with gap=6)
+			// Real bodyEnd of page 0 is 200 (real heights are [200,200], no real gap).
+			const yAtBodyEnd = result.current.minimapYForScrollOffset(200);
+			// Must be the current page's bodyEnd (160), NOT the next page's top (166).
+			expect(yAtBodyEnd).toBeCloseTo(160, 5);
+			expect(yAtBodyEnd).not.toBeCloseTo(166, 1);
+		});
+
+		it("round-trip identity holds at the body-end boundary in asymmetric config", () => {
+			const heights = [200, 200];
+			const viewports = makeViewports([
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+			]);
+			const virtualizer = makeMockVirtualizer({ heights, gap: 0 });
+			const { result } = renderUseMiniMap({
+				viewports,
+				virtualizer,
+				opts: { width: 80, gap: 6 },
+			});
+
+			const pages = result.current.pages;
+			// Y exactly at minimap pages[0].bodyEnd (where the visual gap starts)
+			const yBoundary = pages[0]!.top + pages[0]!.height; // = 160
+			const offset = result.current.scrollOffsetForMinimapY(yBoundary);
+			const yBack = result.current.minimapYForScrollOffset(offset);
+			// Round-trip at the boundary must be identity
+			expect(Math.abs(yBack - yBoundary)).toBeLessThan(0.5);
+		});
+	});
+
+	describe("NaN-resilient rAF skip-frame (codex re-review finding 5)", () => {
+		it("normalizes NaN scrollOffset to 0 so the rAF skip-frame guard does not degrade", async () => {
+			const callbacks: FrameRequestCallback[] = [];
+			let nextId = 1;
+			vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(
+				(cb: FrameRequestCallback) => {
+					callbacks.push(cb);
+					return nextId++;
+				},
+			);
+			vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+
+			const viewports = makeViewports([
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+			]);
+			// Virtualizer reports NaN for both scrollOffset and clientHeight.
+			const virtualizer = {
+				get scrollOffset() {
+					return Number.NaN;
+				},
+				scrollElement: { clientHeight: Number.NaN } as unknown as HTMLElement,
+				options: { estimateSize: () => 200 },
+				getOffsetForIndex: (i: number, a: "start") =>
+					[i * 200, a] as [number, "start"],
+				getTotalSize: () => 400,
+			} as unknown as PDFVirtualizer;
+
+			const { result } = renderUseMiniMap({ viewports, virtualizer });
+
+			// Drive 5 frames. With NaN normalization, scrollOffset is treated as 0
+			// every frame and the skip-frame guard correctly skips all but the
+			// first. viewport.top must remain 0 (NOT NaN) and finite.
+			for (let i = 0; i < 5; i += 1) {
+				const cb = callbacks.shift();
+				if (cb) {
+					await act(async () => {
+						cb(performance.now());
+					});
+				}
+			}
+
+			expect(Number.isFinite(result.current.viewport.top)).toBe(true);
+			expect(result.current.viewport.top).toBeCloseTo(0, 5);
+			expect(Number.isFinite(result.current.viewport.height)).toBe(true);
+		});
+	});
+
+	describe("rAF skip-frame is a true skip (codex re-review finding 6 — render counter)", () => {
+		it("does not cause re-renders when scrollOffset is unchanged across 5 frames", async () => {
+			const callbacks: FrameRequestCallback[] = [];
+			let nextId = 1;
+			vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(
+				(cb: FrameRequestCallback) => {
+					callbacks.push(cb);
+					return nextId++;
+				},
+			);
+			vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+
+			const viewports = makeViewports([
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+			]);
+			const virtualizer = makeMockVirtualizer({
+				heights: [200, 200],
+				scrollOffset: 0,
+				clientHeight: 100,
+			});
+
+			// Count actual renders of the hook's host. The helper wires the
+			// counter into the renderHook callback itself, so each callback
+			// invocation corresponds to one render of the host component.
+			// (An earlier version used `renderHook(() => <Probe />)` which
+			// returns a React element from the callback but never mounts
+			// Probe — making the assertion a tautology.)
+			const renderCount = { current: 0 };
+			renderUseMiniMapWithCount({ viewports, virtualizer, renderCount });
+
+			// Sanity check: the helper actually invoked useMiniMap. If this
+			// fails, the test infrastructure is broken and the assertion below
+			// would be a false positive.
+			expect(renderCount.current).toBeGreaterThanOrEqual(1);
+
+			const initialRenders = renderCount.current;
+			// Drive 5 frames with stable scrollOffset
+			for (let i = 0; i < 5; i += 1) {
+				const cb = callbacks.shift();
+				if (cb) {
+					await act(async () => {
+						cb(performance.now());
+					});
+				}
+			}
+			// First frame may seed state once — but after that, no more renders.
+			// Total post-mount additional renders should be at most 1 (the seed).
+			const postFrameRenders = renderCount.current - initialRenders;
+			expect(postFrameRenders).toBeLessThanOrEqual(1);
+		});
+	});
+
+	describe("null getOffsetForIndex (codex review finding 4)", () => {
+		it("returns safe values when virtualizer offsets are not yet resolvable", () => {
+			// During init, getOffsetForIndex can return null. The original
+			// implementation silently fabricated 0, producing plausible-looking
+			// but wrong coordinates for non-zero pages.
+			const viewports = makeViewports([
+				{ width: 100, height: 200 },
+				{ width: 100, height: 200 },
+			]);
+			const virtualizer = {
+				scrollOffset: 0,
+				scrollElement: { clientHeight: 600 } as unknown as HTMLElement,
+				options: { estimateSize: () => 200 },
+				getOffsetForIndex: () => null,
+				getTotalSize: () => 400,
+			} as unknown as PDFVirtualizer;
+
+			const { result } = renderUseMiniMap({ viewports, virtualizer });
+
+			// Mappings must not fabricate page starts. Safe fallback to 0.
+			expect(result.current.minimapYForScrollOffset(100)).toBe(0);
+			expect(result.current.scrollOffsetForMinimapY(50)).toBe(0);
 		});
 	});
 });
